@@ -9,9 +9,13 @@ This repository manages AWS infrastructure across multiple accounts using Terraf
 - ✅ AWS CLI configured
 - 🔄 Multiple AWS accounts (dev, staging, prod)
 - 🔄 Access to create cross-account roles
+- 🔄 **IAM permissions set up** - See [IAM_PREREQUISITES.md](IAM_PREREQUISITES.md) for detailed requirements
 
 ### 30-Second Overview
 ```bash
+# 0. Verify you're in the right account (not root!)
+./check-account-type.sh
+
 # 1. Install Terraform (if needed)
 brew install hashicorp/tap/terraform
 
@@ -46,11 +50,17 @@ aws sts get-caller-identity
 
 ### Phase 2: Set Up Cross-Account Roles
 
+> **🏛️ Important**: Use a **dedicated Management/Ops Account** instead of your root account. See [DEDICATED_MANAGEMENT_ACCOUNT_GUIDE.md](DEDICATED_MANAGEMENT_ACCOUNT_GUIDE.md) for detailed architecture guidance.
+
 #### Step 2.1: Get Your Management Account ID
 ```bash
-# Note down your current (management) account ID
+# Note down your current (dedicated management/ops) account ID
+# DO NOT use your root/master account for this
 MANAGEMENT_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "Management Account ID: $MANAGEMENT_ACCOUNT_ID"
+
+# Verify you're in the correct account
+aws organizations describe-account --account-id $MANAGEMENT_ACCOUNT_ID || echo "Not an org account - that's fine for dedicated mgmt account"
 ```
 
 #### Step 2.2: Create Cross-Account Roles in Each Target Account
@@ -323,7 +333,9 @@ terraform refresh
 
 ## 📚 Additional Resources
 
+- **[DEDICATED_MANAGEMENT_ACCOUNT_GUIDE.md](DEDICATED_MANAGEMENT_ACCOUNT_GUIDE.md)** - ⭐ Dedicated management account architecture (recommended)
 - **[DISTRIBUTED_BACKEND_GUIDE.md](DISTRIBUTED_BACKEND_GUIDE.md)** - Detailed backend architecture guide
+- **[IAM_PREREQUISITES.md](IAM_PREREQUISITES.md)** - Complete IAM permission requirements
 - **[shared/provider-configs/setup-cross-account-roles.md](shared/provider-configs/setup-cross-account-roles.md)** - Cross-account role setup guide
 - **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Alternative centralized setup guide
 
