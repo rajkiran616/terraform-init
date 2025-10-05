@@ -1,0 +1,115 @@
+#!/bin/bash
+
+# Import commands for ${account.name} (${account_id})
+# This script contains terraform import commands for existing resources
+
+set -e
+
+echo "🔄 Starting import process for ${account.name} account..."
+echo "Account ID: ${account_id}"
+echo "Environment: ${account.environment}"
+echo ""
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+# Function to safely import resources
+safe_import() {
+    local resource_type="$1"
+    local resource_name="$2"
+    local resource_id="$3"
+    
+    echo "Importing $resource_type: $resource_name"
+    
+    if terraform import "$resource_type.$resource_name" "$resource_id"; then
+        print_success "Successfully imported $resource_type.$resource_name"
+    else
+        print_error "Failed to import $resource_type.$resource_name"
+        echo "You may need to check if the resource already exists in state or if there are configuration issues"
+    fi
+    echo ""
+}
+
+# Check if we're in the right directory
+if [ ! -f "terraform.tf" ] && [ ! -f "main.tf" ]; then
+    print_error "Please run this script from the Terraform configuration directory"
+    exit 1
+fi
+
+echo "📋 Import Summary:"
+echo "- VPCs: ${resources.resource_counts.vpcs}"
+echo "- Subnets: ${resources.resource_counts.subnets}"
+echo "- Security Groups: ${resources.resource_counts.security_groups}"
+echo "- EC2 Instances: ${resources.resource_counts.ec2_instances}"
+echo ""
+
+read -p "Do you want to proceed with the import? (y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Import cancelled."
+    exit 0
+fi
+
+echo "🚀 Starting import process..."
+
+# Import VPCs
+%{ if length(resources.vpcs) > 0 ~}
+echo "📍 Importing VPCs..."
+%{ for vpc_id, vpc in resources.vpcs ~}
+safe_import "aws_vpc" "vpc_${replace(vpc_id, "-", "_")}" "${vpc_id}"
+%{ endfor ~}
+%{ endif ~}
+
+# Import Subnets
+%{ if length(resources.subnets) > 0 ~}
+echo "🌐 Importing Subnets..."
+%{ for subnet_id, subnet in resources.subnets ~}
+safe_import "aws_subnet" "subnet_${replace(subnet_id, "-", "_")}" "${subnet_id}"
+%{ endfor ~}
+%{ endif ~}
+
+# Import Security Groups
+%{ if length(resources.security_groups) > 0 ~}
+echo "🔒 Importing Security Groups..."
+%{ for sg_id, sg in resources.security_groups ~}
+safe_import "aws_security_group" "sg_${replace(sg_id, "-", "_")}" "${sg_id}"
+%{ endfor ~}
+%{ endif ~}
+
+# Import EC2 Instances
+%{ if length(resources.ec2_instances) > 0 ~}
+echo "💻 Importing EC2 Instances..."
+%{ for instance_id, instance in resources.ec2_instances ~}
+safe_import "aws_instance" "instance_${replace(instance_id, "-", "_")}" "${instance_id}"
+%{ endfor ~}
+%{ endif ~}
+
+echo ""
+echo "🎉 Import process completed!"
+echo ""
+echo "Next steps:"
+echo "1. Run 'terraform plan' to see if there are any configuration drift issues"
+echo "2. Update resource configurations to match the imported resources exactly"
+echo "3. Run 'terraform plan' again to ensure no changes are detected"
+echo "4. Once plan shows no changes, your import is successful!"
+echo ""
+echo "⚠️  Important reminders:"
+echo "- Review all imported resources carefully"
+echo "- Some attributes may not be importable and will show as changes"
+echo "- You may need to ignore certain lifecycle attributes"
+echo "- Consider using 'ignore_changes' for attributes that don't matter"

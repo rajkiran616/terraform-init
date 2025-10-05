@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../aws-iam-terraform"
+		},
+		{
+			"path": "../terraform-aws-infrastructure"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}
