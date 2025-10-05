@@ -1,313 +1,382 @@
 # Multi-Account AWS Infrastructure with Terraform
 
-This repository provides a comprehensive Terraform setup for managing AWS resources across multiple accounts using AWS Organizations. It's designed to introduce Terraform for managing **new resource creation** going forward, while working alongside existing manually created resources.
+This repository manages AWS infrastructure across multiple accounts using Terraform with **distributed state management** for enterprise-grade security and isolation.
 
-## 🏗️ Architecture Overview
-
-```
-Root Account (Master)
-├── Shared Services (Transit Gateway, DNS, Logging)
-├── Development Account(s)
-├── Staging Account(s)
-└── Production Account(s)
-```
-
-## 📁 Directory Structure
-
-```
-terraform-aws-infrastructure/
-├── environments/           # Environment-specific configurations
-│   ├── root/              # Root/Master account resources
-│   ├── dev/               # Development environment
-│   ├── staging/           # Staging environment
-│   ├── prod/              # Production environment
-│   └── multi-account/     # Dynamic multi-account management
-├── modules/               # Reusable Terraform modules
-│   ├── account-discovery/ # Auto-discover AWS Organization accounts
-│   ├── iam/              # IAM roles, policies, users
-│   ├── vpc/              # VPC, subnets, routing
-│   ├── security-groups/  # Security group management
-│   ├── alb/              # Application Load Balancer
-│   ├── ec2/              # EC2 instances
-│   ├── efs/              # Elastic File System
-│   ├── ebs/              # Elastic Block Store
-│   ├── transit-gateway/  # Transit Gateway for connectivity
-│   ├── route53/          # DNS management
-│   └── peering/          # VPC peering connections
-├── shared/               # Shared configurations
-│   ├── backend/          # Terraform state backend setup
-│   └── providers/        # Provider configurations
-├── scripts/              # Utility scripts
-└── docs/                 # Additional documentation
-```
-
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
+- ✅ Terraform installed (version 1.0+)
+- ✅ AWS CLI configured
+- 🔄 Multiple AWS accounts (dev, staging, prod)
+- 🔄 Access to create cross-account roles
 
-1. **AWS CLI configured** with appropriate credentials
-2. **Terraform >= 1.0** installed
-3. **AWS Organizations** set up with multiple accounts
-4. **Cross-account roles** created (we'll help you set these up)
+### 30-Second Overview
+```bash
+# 1. Install Terraform (if needed)
+brew install hashicorp/tap/terraform
 
-### Step 1: Set Up Backend Infrastructure
+# 2. Set up cross-account roles in target accounts
+# 3. Deploy distributed backend to each account
+# 4. Deploy your infrastructure
+```
 
-First, create the S3 bucket and DynamoDB table for Terraform state management:
+---
+
+## 📋 Step-by-Step Setup Instructions
+
+### Phase 1: Install Prerequisites
+
+#### Step 1.1: Install Terraform
+```bash
+# Install Terraform via Homebrew
+brew install hashicorp/tap/terraform
+
+# Verify installation
+terraform version
+```
+
+#### Step 1.2: Verify AWS CLI
+```bash
+# Check AWS CLI installation
+aws --version
+
+# Verify current AWS credentials
+aws sts get-caller-identity
+```
+
+### Phase 2: Set Up Cross-Account Roles
+
+#### Step 2.1: Get Your Management Account ID
+```bash
+# Note down your current (management) account ID
+MANAGEMENT_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+echo "Management Account ID: $MANAGEMENT_ACCOUNT_ID"
+```
+
+#### Step 2.2: Create Cross-Account Roles in Each Target Account
+
+For **each target account** (dev, staging, prod), switch to that account and run:
+
+```bash
+# Set variables (update these for each account)
+export MANAGEMENT_ACCOUNT_ID="123456789012"  # Your management account ID
+export EXTERNAL_ID="my-unique-external-id-2024"  # Choose a unique external ID
+export ROLE_NAME="TerraformCrossAccountRole"
+
+# Create trust policy file
+cat > trust-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${MANAGEMENT_ACCOUNT_ID}:root"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "${EXTERNAL_ID}"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+# Create the role
+aws iam create-role \
+  --role-name ${ROLE_NAME} \
+  --assume-role-policy-document file://trust-policy.json \
+  --description "Cross-account role for Terraform deployments"
+
+# Attach necessary policies
+aws iam attach-role-policy \
+  --role-name ${ROLE_NAME} \
+  --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
+
+# Clean up
+rm trust-policy.json
+
+# Note the role ARN for later use
+aws iam get-role --role-name ${ROLE_NAME} --query Role.Arn --output text
+```
+
+#### Step 2.3: Test Cross-Account Access
+
+From your management account, test assuming each role:
+
+```bash
+# Test dev account role
+aws sts assume-role \
+  --role-arn arn:aws:iam::DEV-ACCOUNT-ID:role/TerraformCrossAccountRole \
+  --role-session-name test-session \
+  --external-id my-unique-external-id-2024
+
+# If successful, you'll see temporary credentials
+```
+
+### Phase 3: Set Up Distributed Backend Infrastructure
+
+#### Step 3.1: Set Up Backend in Each Account
+
+For each target account, run the automated setup script:
 
 ```bash
 cd shared/backend
 
-# Create terraform.tfvars
-cat > terraform.tfvars <<EOF
-company_name = "your-company"
-aws_region   = "us-east-1"
-EOF
+# Set up backend in development account
+./setup-distributed-backend.sh \
+  -e dev \
+  -r arn:aws:iam::DEV-ACCOUNT-ID:role/TerraformCrossAccountRole \
+  -x my-unique-external-id-2024 \
+  -a development \
+  -p my-company
 
-# Initialize and apply
-terraform init
-terraform apply
+# Set up backend in staging account  
+./setup-distributed-backend.sh \
+  -e staging \
+  -r arn:aws:iam::STAGING-ACCOUNT-ID:role/TerraformCrossAccountRole \
+  -x my-unique-external-id-2024 \
+  -a staging \
+  -p my-company
+
+# Set up backend in production account
+./setup-distributed-backend.sh \
+  -e prod \
+  -r arn:aws:iam::PROD-ACCOUNT-ID:role/TerraformCrossAccountRole \
+  -x my-unique-external-id-2024 \
+  -a production \
+  -p my-company
 ```
 
-### Step 2: Set Up Cross-Account Roles (One-time setup)
+**What this creates in each account:**
+- S3 bucket: `my-company-{env}-terraform-state`
+- DynamoDB table: `my-company-{env}-terraform-locks`  
+- KMS key for encryption
+- Backend configuration file: `environments/{env}/backend-distributed.hcl`
 
-Create cross-account roles in each account for Terraform access:
+### Phase 4: Configure and Deploy Infrastructure
+
+#### Step 4.1: Configure Development Environment
 
 ```bash
-cd environments/multi-account
+cd ../../environments/dev
 
-# Create terraform.tfvars
-cat > terraform.tfvars <<EOF
-project_name              = "your-project"
-owner                    = "infrastructure-team"
-terraform_state_bucket   = "terraform-state-your-company-12345678"
-terraform_lock_table     = "terraform-state-lock-your-company"
-create_cross_account_roles = true
-EOF
+# Create terraform.tfvars from example
+cp terraform.tfvars.example terraform.tfvars
 
-# This will discover accounts and create roles
-terraform init -backend-config="backend.hcl"
-terraform apply
+# Edit terraform.tfvars with your actual values
+vim terraform.tfvars
 ```
 
-### Step 3: Configure Backend for Each Environment
+Update `terraform.tfvars` with:
+```hcl
+environment     = "dev"
+aws_region      = "us-east-1"
 
-Create backend configuration files:
+# Update with your actual dev account details
+assume_role_arn = "arn:aws:iam::DEV-ACCOUNT-ID:role/TerraformCrossAccountRole"
+external_id     = "my-unique-external-id-2024"
+
+# Project configuration
+project_name = "my-company"
+owner       = "infrastructure-team"
+cost_center = "engineering"
+```
+
+#### Step 4.2: Use Distributed Backend Configuration
 
 ```bash
-# For each environment, create a backend config
-cat > backend-dev.hcl <<EOF
-bucket         = "terraform-state-your-company-12345678"
-key           = "dev/terraform.tfstate"
-region        = "us-east-1"
-dynamodb_table = "terraform-state-lock-your-company"
-encrypt       = true
-EOF
+# Use the distributed backend version
+cp main-distributed.tf main.tf
+
+# Initialize Terraform with distributed backend
+terraform init -backend-config=backend-distributed.hcl
+
+# Plan your infrastructure
+terraform plan -var-file="terraform.tfvars"
+
+# Apply (deploy) your infrastructure
+terraform apply -var-file="terraform.tfvars"
 ```
 
-### Step 4: Deploy Infrastructure to Accounts
+#### Step 4.3: Set Up Other Environments
 
 ```bash
-cd environments/multi-account
+# Copy dev configuration to staging
+cp -r ../dev ../staging
+cd ../staging
 
-# Initialize with backend
-terraform init -backend-config="backend-multi-account.hcl"
+# Update terraform.tfvars for staging
+vim terraform.tfvars
+# Change environment = "staging"
+# Update assume_role_arn to staging account
 
-# Plan and apply
-terraform plan
-terraform apply
+# Initialize and deploy staging
+terraform init -backend-config=backend-distributed.hcl
+terraform plan -var-file="terraform.tfvars"
+terraform apply -var-file="terraform.tfvars"
+
+# Repeat for production
+cp -r ../dev ../prod
+cd ../prod
+# Update terraform.tfvars for production
+# Deploy production environment
 ```
 
-## 🔧 Key Features
+---
 
-### Dynamic Account Discovery
+## 🏗️ Architecture Overview
 
-The setup automatically discovers all accounts in your AWS Organization and categorizes them based on:
-
-- **Account naming patterns** (e.g., `company-env-purpose`)
-- **Account tags** (Environment, Purpose, AccountType)
-- **Account relationships** (master vs member accounts)
-
-### Automatic CIDR Allocation
-
-VPC CIDRs are automatically allocated from a base CIDR block to avoid conflicts:
-
-```hcl
-# Automatically assigns non-overlapping CIDRs
-vpc_cidrs = {
-  for i, id in keys(deployment_accounts) : id => cidrsubnet(var.base_cidr, 8, i + 1)
-}
+### Directory Structure
+```
+terraform-multi-account/
+├── README.md                          # This comprehensive guide
+├── DISTRIBUTED_BACKEND_GUIDE.md       # Detailed backend guide
+├── modules/                           # Reusable Terraform modules
+│   └── iam-policies/                 # IAM policies module
+├── environments/                      # Environment-specific configs
+│   ├── dev/                          # Development account
+│   │   ├── main-distributed.tf      # Distributed backend version
+│   │   ├── backend-distributed.hcl  # Backend configuration
+│   │   ├── terraform.tfvars.example # Example variables
+│   │   └── variables.tf             # Variable definitions
+│   ├── staging/                     # Staging account
+│   └── prod/                        # Production account
+└── shared/                           # Shared configurations
+    ├── backend/                      # Backend setup
+    │   ├── distributed-backend.tf   # Distributed backend resources
+    │   └── setup-distributed-backend.sh # Automated setup script
+    └── provider-configs/            # Provider configurations
 ```
 
-### Environment-Aware Configuration
+### Distributed State Architecture
+```
+Dev Account:     [S3: dev-terraform-state] + [DynamoDB: dev-locks]
+Staging Account: [S3: staging-terraform-state] + [DynamoDB: staging-locks]  
+Prod Account:    [S3: prod-terraform-state] + [DynamoDB: prod-locks]
 
-Different environments get different resource configurations:
-
-- **Production**: High availability, monitoring, backups
-- **Staging**: Moderate resources, basic monitoring
-- **Development**: Minimal resources, cost-optimized
-
-### IAM Role Management
-
-Standard IAM roles are created without requiring service-linked role permissions:
-
-```hcl
-standard_iam_roles_per_account = {
-  "EC2InstanceRole" = {
-    description = "IAM role for EC2 instances"
-    trusted_entities = ["ec2.amazonaws.com"]
-    managed_policy_arns = [
-      "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-    ]
-  }
-}
+✅ Complete isolation between environments
+✅ Reduced blast radius
+✅ Enhanced security and compliance
 ```
 
-## 📝 Configuration Examples
+---
 
-### Basic Multi-Account Setup
+## 🔧 Daily Operations
 
-```hcl
-# terraform.tfvars
-project_name = "mycompany"
-owner        = "platform-team"
-aws_region   = "us-east-1"
-
-# Network configuration
-base_cidr = "10.0.0.0/8"
-create_nat_gateway_non_prod = false
-
-# Resource flags
-create_web_tier      = true
-create_app_tier      = true
-create_database_tier = true
-create_alb          = false  # Enable when needed
-
-# Security
-web_ingress_cidrs     = ["0.0.0.0/0"]
-bastion_allowed_cidrs = ["203.0.113.0/24"]  # Your office IP
+### Deploy Changes to an Environment
+```bash
+cd environments/dev
+terraform plan -var-file="terraform.tfvars"
+terraform apply -var-file="terraform.tfvars"
 ```
 
-### Custom Application Roles
+### Add New IAM Policies
+Edit `environments/{env}/main.tf` and add to the `policies` map:
 
 ```hcl
-application_iam_roles = {
-  "WebAppRole" = {
-    description = "Role for web application servers"
-    trusted_entities = ["ec2.amazonaws.com"]
-    managed_policy_arns = [
-      "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-    ]
-    create_in_environments = ["production", "staging"]
-    inline_policies = {
-      "S3Access" = jsonencode({
-        Version = "2012-10-17"
-        Statement = [
-          {
-            Effect = "Allow"
-            Action = ["s3:GetObject", "s3:PutObject"]
-            Resource = ["arn:aws:s3:::app-assets-*/*"]
-          }
-        ]
-      })
+policies = {
+  # Existing policies...
+  
+  "new-service-policy" = {
+    description = "Policy for new service"
+    policy_document = {
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Action = ["service:*"]
+          Resource = "*"
+        }
+      ]
     }
   }
 }
 ```
 
-## 🔒 Security Best Practices
+### View Infrastructure State
+```bash
+# List all resources
+terraform state list
 
-### Cross-Account Access
+# Show specific resource
+terraform state show aws_iam_policy.policy_name
 
-- Uses assume role for cross-account access
-- External ID for additional security
-- Least privilege IAM policies
-- Regular credential rotation
+# Refresh state
+terraform refresh
+```
 
-### Network Security
+---
 
-- Private subnets by default
-- NAT Gateways for outbound internet access
-- Security groups with minimal required access
-- VPC Flow Logs for monitoring
+## 🔒 Security Features
 
-### Resource Tagging
+- **Cross-Account Isolation**: Each account's state is completely separate
+- **KMS Encryption**: State files encrypted with account-specific keys
+- **External ID Verification**: Additional security layer for role assumption
+- **Least Privilege**: Roles have minimal required permissions
+- **Versioning**: Full state history with point-in-time recovery
+- **SSL/TLS**: All communications encrypted in transit
 
-All resources are automatically tagged with:
-- `Environment`
-- `Project`
-- `ManagedBy = "Terraform"`
-- `Owner`
-- `CostCenter`
-- `LastUpdated`
-
-## 🛠️ Managing Existing Resources
-
-Since you have existing resources, this setup is designed to:
-
-1. **Coexist** with existing manually created resources
-2. **Gradually migrate** management to Terraform
-3. **Avoid conflicts** through careful resource naming and placement
-
-### Import Strategy (Future)
-
-When ready to import existing resources:
-
-1. Use `terraform import` for individual resources
-2. Use tools like `terraformer` for bulk imports
-3. Gradually bring resources under Terraform management
-
-## 📊 Monitoring and Compliance
-
-### CloudWatch Integration
-
-- VPC Flow Logs
-- CloudTrail logging
-- Custom CloudWatch alarms
-- Cost monitoring tags
-
-### Compliance Features
-
-- Encryption at rest and in transit
-- Network isolation
-- Access logging
-- Regular security assessments
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **Permission Denied**
-   ```bash
-   # Ensure cross-account roles exist and are assumable
-   aws sts assume-role --role-arn arn:aws:iam::ACCOUNT:role/TerraformCrossAccountRole --role-session-name test
-   ```
-
-2. **State Lock Issues**
-   ```bash
-   # Force unlock if needed (use carefully)
-   terraform force-unlock LOCK_ID
-   ```
-
-3. **CIDR Conflicts**
-   ```bash
-   # Check existing VPC CIDRs before deployment
-   aws ec2 describe-vpcs --query 'Vpcs[].CidrBlock'
-   ```
+---
 
 ## 📚 Additional Resources
 
-- [AWS Organizations Best Practices](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_best-practices.html)
-- [Terraform AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
-- [AWS Multi-Account Strategy](https://aws.amazon.com/organizations/getting-started/best-practices/)
+- **[DISTRIBUTED_BACKEND_GUIDE.md](DISTRIBUTED_BACKEND_GUIDE.md)** - Detailed backend architecture guide
+- **[shared/provider-configs/setup-cross-account-roles.md](shared/provider-configs/setup-cross-account-roles.md)** - Cross-account role setup guide
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Alternative centralized setup guide
 
-## 🤝 Contributing
+---
 
-1. Follow existing module structure
-2. Include comprehensive variable descriptions
-3. Add appropriate outputs
-4. Update documentation
-5. Test in non-production environments first
+## 🆘 Troubleshooting
 
-## 📄 License
+### Common Issues
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+**"Access Denied" when assuming role:**
+- Verify role ARN is correct
+- Check external ID matches
+- Ensure role trust policy allows your account
+
+**Backend initialization failed:**
+- Verify S3 bucket exists in target account
+- Check DynamoDB table exists
+- Confirm cross-account role has S3/DynamoDB permissions
+
+**State lock errors:**
+```bash
+# List locks
+aws dynamodb scan --table-name my-company-dev-terraform-locks
+
+# Force unlock (use carefully)
+terraform force-unlock LOCK_ID
+```
+
+### Verification Commands
+```bash
+# Test role assumption
+aws sts assume-role \
+  --role-arn arn:aws:iam::ACCOUNT:role/TerraformCrossAccountRole \
+  --role-session-name test \
+  --external-id your-external-id
+
+# Check backend resources
+aws s3 ls s3://my-company-dev-terraform-state/ --profile dev
+aws dynamodb describe-table --table-name my-company-dev-terraform-locks --profile dev
+```
+
+---
+
+## ✅ Success Checklist
+
+- [ ] Terraform installed and verified
+- [ ] AWS CLI configured with management account
+- [ ] Cross-account roles created in all target accounts
+- [ ] Role assumption tested from management account
+- [ ] Distributed backend deployed to all accounts
+- [ ] Dev environment configured and deployed
+- [ ] Staging environment configured and deployed  
+- [ ] Production environment configured and deployed
+- [ ] Team documentation updated with account-specific details
+
+🎉 **Congratulations!** You now have enterprise-grade multi-account Terraform infrastructure with distributed state management.

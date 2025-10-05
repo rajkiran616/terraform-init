@@ -1,0 +1,17 @@
+# Development Environment Variables
+# Copy this file to terraform.tfvars and update with your actual values
+
+environment     = "dev"
+aws_region     = "us-east-1"
+
+# Update these with your actual account IDs and role names
+assume_role_arn = "arn:aws:iam::123456789012:role/TerraformCrossAccountRole"
+external_id     = "your-unique-external-id"
+
+# Optional: Audit account role
+# audit_assume_role_arn = "arn:aws:iam::987654321098:role/TerraformCrossAccountRole"
+
+# Project configuration
+project_name = "my-company-infrastructure"
+owner       = "infrastructure-team"
+cost_center = "engineering"
