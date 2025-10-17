@@ -1,0 +1,52 @@
+aws_region = "us-east-1"
+
+cross_account_role_name = "OrganizationAccountAccessRole"
+
+iam_policies = {
+  # Example: S3 read-only access to specific bucket
+  "s3-read-only" = {
+    name        = "terraform-s3-read-only"
+    description = "Read-only access to company logs bucket"
+    document = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::my-company-logs",
+            "arn:aws:s3:::my-company-logs/*"
+          ]
+        }
+      ]
+    })
+    tags = {
+      Purpose = "LogsAccess"
+    }
+  }
+
+  # Example: EC2 describe-only
+  "ec2-read-only" = {
+    name        = "terraform-ec2-read-only"
+    description = "EC2 describe permissions only"
+    document = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Action = [
+            "ec2:Describe*",
+            "ec2:List*"
+          ]
+          Resource = "*"
+        }
+      ]
+    })
+    tags = {
+      Purpose = "Monitoring"
+    }
+  }
+}
