@@ -12,19 +12,34 @@ This Terraform module manages IAM policies and roles for specific AWS accounts a
 
 ```
 aws-iam-terraform/
-├── main.tf                      # Main Terraform configuration
-├── variables.tf                 # Variable definitions
-├── locals.tf                    # Environment selection logic
-├── environments/
-│   ├── dev.tf                  # Development environment config
-│   ├── qa.tf                   # QA/Staging environment config  
-│   └── prod.tf                 # Production environment config
+├── main.tf                                    # Main Terraform configuration
+├── variables.tf                               # Variable definitions
+├── locals.tf                                  # JSON configuration loading logic
+├── backend.tf                                 # Backend configuration
+├── outputs.tf                                 # Output definitions
+├── config/
+│   ├── dev.json                              # Development environment JSON config
+│   ├── qa.json                               # QA environment JSON config
+│   ├── prod.json                             # Production environment JSON config
+│   └── README.md                             # Configuration documentation
+├── backend/
+│   ├── dev.hcl                               # Development backend config
+│   ├── qa.hcl                                # QA backend config
+│   └── prod.hcl                              # Production backend config
 ├── examples/
-│   ├── dev.tfvars             # Development deployment variables
-│   ├── qa.tfvars              # QA deployment variables
-│   └── prod.tfvars            # Production deployment variables
-└── scripts/
-    └── deploy.sh              # Deployment helper script
+│   ├── dev.tfvars                            # Development deployment variables
+│   ├── qa.tfvars                             # QA deployment variables
+│   └── prod.tfvars                           # Production deployment variables
+├── iam-policies/
+│   ├── terraform-execution-policy.json       # Full Terraform IAM policy
+│   ├── terraform-execution-policy-prod.json  # Restricted production IAM policy
+│   └── README.md                             # IAM policy documentation
+├── scripts/
+│   ├── deploy.sh                             # Deployment helper script
+│   └── setup-state-bucket.sh                # S3 state bucket setup script
+├── docs/
+│   └── backend-setup.md                      # Backend configuration guide
+└── README.md                                  # Main project documentation
 ```
 
 ## Usage
@@ -57,39 +72,43 @@ terraform apply -var-file="examples/prod.tfvars"
 
 ## Environment Configuration
 
-Each environment file (`environments/*.tf`) contains:
+Each environment JSON file (`config/*.json`) contains:
 
 - **Account Information**: Account ID, name, region
 - **Cross-Account Role**: Role name for assuming access
-- **IAM Policies**: Environment-specific IAM policies
-- **IAM Roles**: Environment-specific IAM roles
+- **IAM Policies**: Environment-specific IAM policies as key-value pairs
+- **IAM Roles**: Environment-specific IAM roles as key-value pairs
 
-### Example Environment File Structure
+### Example JSON Configuration Structure
 
-```hcl
-locals {
-  dev_config = {
-    environment = "dev"
-    account_id  = "345678901234"
-    account_name = "development"
-    region = "us-west-2"
-    cross_account_role = "DevelopmentAccountAccessRole"
-    
-    iam_policies = {
-      policy_name = {
-        name        = "PolicyName"
-        description = "Policy description"
-        document    = jsonencode({ /* policy document */ })
-        tags = { /* policy tags */ }
+```json
+{
+  "environment": "dev",
+  "account_id": "345678901234",
+  "account_name": "development",
+  "region": "us-west-2",
+  "cross_account_role": "DevelopmentAccountAccessRole",
+  
+  "iam_policies": {
+    "policy_key": {
+      "name": "PolicyName-Dev",
+      "description": "Policy description",
+      "document": "{\"Version\":\"2012-10-17\",\"Statement\":[...]}",
+      "tags": {
+        "Environment": "dev",
+        "Team": "engineering"
       }
     }
-    
-    iam_roles = {
-      role_name = {
-        name               = "RoleName"
-        description        = "Role description"
-        assume_role_policy = jsonencode({ /* trust policy */ })
-        tags = { /* role tags */ }
+  },
+  
+  "iam_roles": {
+    "role_key": {
+      "name": "RoleName-Dev",
+      "description": "Role description",
+      "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[...]}",
+      "tags": {
+        "Environment": "dev",
+        "Type": "application"
       }
     }
   }
@@ -98,11 +117,12 @@ locals {
 
 ## Adding New Environments
 
-1. **Create environment file**: Add new `environments/newenv.tf` file
+1. **Create JSON config**: Add new `config/newenv.json` file with environment configuration
 2. **Update variables.tf**: Add new environment to validation list
-3. **Update locals.tf**: Add new environment to selection logic
+3. **Update locals.tf**: Add new environment to JSON loading logic
 4. **Create tfvars**: Add `examples/newenv.tfvars` file
-5. **Update deployment script**: Add new case statement
+5. **Create backend config**: Add `backend/newenv.hcl` file
+6. **Update deployment script**: Add new case statement
 
 ## Variables
 
@@ -113,10 +133,12 @@ locals {
 ## Benefits
 
 - **Simplified deployment**: Single variable controls entire environment
-- **Clear separation**: Each environment has dedicated configuration
-- **Easy maintenance**: Add/modify environments by editing single files
-- **Type safety**: Terraform validates environment values
-- **No JSON parsing**: Pure Terraform configuration
+- **Clear separation**: Each environment has dedicated JSON configuration file
+- **Easy maintenance**: Add/modify environments by editing JSON files
+- **Type safety**: Terraform validates environment values and JSON structure
+- **Version control friendly**: JSON files are easy to diff and merge
+- **External tool integration**: JSON can be easily consumed by other tools and scripts
+- **Human readable**: Key-value pairs are intuitive to read and modify
 
 ## Migration from JSON-based approach
 

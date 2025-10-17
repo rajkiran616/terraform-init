@@ -1,101 +1,55 @@
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
+# Data sources for account information (optional)
+# Uncomment if you need organization-level information
+# data "aws_organizations_organization" "this" {}
+# data "aws_organizations_accounts" "this" {}
+
+# Create IAM resources for development environment
+module "iam_dev" {
+  count = var.environment == "dev" ? 1 : 0
+  
+  source = "./modules/iam"
+  
+  providers = {
+    aws = aws.dev
   }
   
-  # Backend configuration for remote state
-  backend "s3" {
-    bucket  = "your-terraform-state-bucket"  # Change this to your bucket name
-    key     = "iam-management/terraform.tfstate"
-    region  = "us-east-1"  # Change this to your preferred region
-    encrypt = true
-    
-    # S3 native state locking (requires versioning enabled on bucket)
-    # No DynamoDB table required
-  }
+  environment   = local.environment_config.environment
+  account_id    = local.environment_config.account_id
+  account_name  = local.environment_config.account_name
+  iam_policies  = local.environment_config.iam_policies
+  iam_roles     = local.environment_config.iam_roles
 }
 
-# Default provider for master account
-provider "aws" {
-  region = var.aws_region
+# Create IAM resources for QA environment
+module "iam_qa" {
+  count = var.environment == "qa" ? 1 : 0
   
-  default_tags {
-    tags = {
-      ManagedBy = "terraform"
-      Project   = "organization-iam"
-    }
-  }
-}
-
-# Get organization info
-data "aws_organizations_organization" "this" {}
-
-# Get all accounts in organization
-data "aws_organizations_accounts" "this" {}
-
-# Create provider for the target environment account
-provider "aws" {
-  alias  = "target_account"
-  region = local.region
+  source = "./modules/iam"
   
-  assume_role {
-    role_arn = "arn:aws:iam::${local.account_id}:role/${local.cross_account_role}"
+  providers = {
+    aws = aws.qa
   }
   
-  default_tags {
-    tags = {
-      ManagedBy   = "terraform"
-      Project     = "iam-management"
-      Account     = local.account_name
-      Environment = var.environment
-    }
+  environment   = local.environment_config.environment
+  account_id    = local.environment_config.account_id
+  account_name  = local.environment_config.account_name
+  iam_policies  = local.environment_config.iam_policies
+  iam_roles     = local.environment_config.iam_roles
+}
+
+# Create IAM resources for production environment
+module "iam_prod" {
+  count = var.environment == "prod" ? 1 : 0
+  
+  source = "./modules/iam"
+  
+  providers = {
+    aws = aws.prod
   }
-}
-
-# Create IAM policies for the selected environment
-resource "aws_iam_policy" "policies" {
-  for_each = local.policies_for_deployment
-
-  provider = aws.target_account
   
-  name        = each.value.policy_config.name
-  description = each.value.policy_config.description
-  policy      = each.value.policy_config.document
-
-  tags = merge(
-    {
-      ManagedBy   = "terraform"
-      Account     = each.value.account_name
-      AccountId   = each.value.account_id
-      Environment = each.value.environment
-      PolicyKey   = each.value.policy_key
-    },
-    each.value.policy_config.tags
-  )
-}
-
-# Create IAM roles for the selected environment
-resource "aws_iam_role" "roles" {
-  for_each = local.roles_for_deployment
-
-  provider = aws.target_account
-  
-  name               = each.value.role_config.name
-  description        = each.value.role_config.description
-  assume_role_policy = each.value.role_config.assume_role_policy
-
-  tags = merge(
-    {
-      ManagedBy   = "terraform"
-      Account     = each.value.account_name
-      AccountId   = each.value.account_id
-      Environment = each.value.environment
-      RoleKey     = each.value.role_key
-    },
-    each.value.role_config.tags
-  )
+  environment   = local.environment_config.environment
+  account_id    = local.environment_config.account_id
+  account_name  = local.environment_config.account_name
+  iam_policies  = local.environment_config.iam_policies
+  iam_roles     = local.environment_config.iam_roles
 }
